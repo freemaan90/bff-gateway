@@ -48,4 +48,31 @@ export class WhatsappSenderController {
       });
     }
   }
+
+  @Get(`qr`)
+  async whatsappSenderQr() {
+    this.logger.log(`Sending qr request to ${WhatsappSenderController.name}`);
+
+    try {
+      const result = await firstValueFrom(
+        this.whatsappSenderClient
+          .send({ cmd: 'whatsapp_sender_qr' }, {})
+          .pipe(
+            retry(3),
+            catchError((error) => {
+              this.logger.error(
+                `Failed to fetch whatsapp-sender-qr: ${error.message}`,
+              );
+              throw error;
+            }),
+          ),
+      );
+
+      this.logger.log(`whatsapp sender qr OK ${WhatsappSenderController.name}`);
+
+      return result;
+    } catch (error) {
+      
+    }
+  }
 }
