@@ -20,7 +20,7 @@ export class WhatsappSenderController {
 
   @Get('health')
   async whatsAppSenderHealth() {
-    this.logger.log(`Sending healthCheck`);
+    this.logger.log(`Sending healthCheck to ${WhatsappSenderController.name}`);
 
     try {
       const result = await firstValueFrom(
@@ -30,12 +30,14 @@ export class WhatsappSenderController {
             retry(3),
             catchError((error) => {
               this.logger.error(
-                `Failed to fetch ${WhatsappSenderController.name}: ${error.message}`,
+                `Failed to fetch whatsapp-sender: ${error.message}`,
               );
               throw error;
             }),
           ),
       );
+
+      this.logger.log(`Health check OK for ${WhatsappSenderController.name}`);
 
       return result;
     } catch (error) {
