@@ -5,6 +5,7 @@ import { ClientsModule, Transport } from '@nestjs/microservices';
 import { WHATSAPP_SENDER } from './service/service';
 import { envs } from './config/envs';
 import { HealthModule } from './health/health.module';
+import { WhatsappSenderModule } from './whatsapp-sender/whatsapp-sender.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { HealthModule } from './health/health.module';
       },
     ]),
     HealthModule,
+    WhatsappSenderModule,
   ],
   controllers: [AppController],
   providers: [AppService],
