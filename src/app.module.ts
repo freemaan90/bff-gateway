@@ -4,6 +4,7 @@ import { AppService } from './app.service';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { WHATSAPP_SENDER } from './service/service';
 import { envs } from './config/envs';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { envs } from './config/envs';
         },
       },
     ]),
+    HealthModule,
   ],
   controllers: [AppController],
   providers: [AppService],
