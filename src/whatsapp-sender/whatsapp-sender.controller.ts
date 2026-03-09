@@ -137,6 +137,35 @@ export class WhatsappSenderController {
     } catch (error) {}
   }
 
+  @Get(`status/:sessionId`)
+  async getSessionStatusById(@Param(`sessionId`) sessionId: string){
+        this.logger.log(
+      `Sending whatsapp_sender_session_status: ${sessionId} to ${WhatsappSenderController.name}`,
+    );
+
+    try {
+      const result = await firstValueFrom(
+        this.whatsappSenderClient
+          .send({ cmd: 'whatsapp_sender_session_status' }, {sessionId})
+          .pipe(
+            retry(3),
+            catchError((error) => {
+              this.logger.error(
+                `Failed to fetch whatsapp_sender_session_status: ${error.message}`,
+              );
+              throw error;
+            }),
+          ),
+      );
+
+      this.logger.log(
+        `whatsapp_sender_session_status OK ${WhatsappSenderController.name}`,
+      );
+
+      return result;
+    } catch (error) {}
+  }
+
   @Delete(`session`)
   async whatsappSenderSessionDelete(@Body() {sessionId}:CreateSessionDto){
         this.logger.log(
