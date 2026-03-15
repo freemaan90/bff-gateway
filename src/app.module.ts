@@ -6,9 +6,15 @@ import { WHATSAPP_SENDER } from './service/service';
 import { envs } from './config/envs';
 import { HealthModule } from './health/health.module';
 import { WhatsappSenderModule } from './whatsapp-sender/whatsapp-sender.module';
+import { PrismaModule } from './prisma/prisma.module';
+import { AuthModule } from './auth/auth.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
+    PrismaModule,
+    AuthModule,
+    UsersModule,
     ClientsModule.register([
       {
         name: WHATSAPP_SENDER,

@@ -30,6 +30,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       this.logger.error(
         `Microservice ${service} unavailable: ${exception.message}`,
       );
+      this.logger.error(`Full error: ${JSON.stringify({ code: exception?.code, name: exception?.name, message: exception?.message, stack: exception?.stack?.split('\n').slice(0,5).join(' | ') })}`);
 
       return response.status(HttpStatus.SERVICE_UNAVAILABLE).json({
         status: 'down',

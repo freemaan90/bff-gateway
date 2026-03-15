@@ -12,6 +12,12 @@ async function bootstrap() {
     rawBody: true,
     logger,
   });
+
+  app.enableCors({
+    origin: true,
+    credentials: true,
+  });
+
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -26,6 +32,6 @@ async function bootstrap() {
 
   await app.listen(envs.port);
 
-  logger.log(`runing on port ${envs.port}`);
+  logger.log(`Gateway running on port ${envs.port}`);
 }
 bootstrap();
