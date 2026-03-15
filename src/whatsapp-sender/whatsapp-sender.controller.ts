@@ -7,14 +7,16 @@ import {
   Logger,
   Param,
   Post,
+  BadRequestException,
   ServiceUnavailableException,
   UseGuards,
   Request,
 } from '@nestjs/common';
 import { ClientProxy } from '@nestjs/microservices';
-import { catchError, firstValueFrom, retry } from 'rxjs';
+import { catchError, firstValueFrom, retry, timeout } from 'rxjs';
 import { WHATSAPP_SENDER } from 'src/service/service';
 import { CreateSessionDto } from './dto/create-session.dto';
+import { SendMessageDto } from './dto/send-message.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { WhatsappService } from '../modules/whatsapp/services/whatsapp.service';
 
@@ -60,9 +62,67 @@ export class WhatsappSenderController {
   @Get('sessions')
   async getSessions(@Request() req) {
     const userId = req.user.id;
-    this.logger.log(`User ${userId} requesting sessions`);
 
-    return this.whatsappService.getUserSessions(userId);
+    let sessions = await this.whatsappService.getUserSessions(userId);
+
+    // Si la DB no tiene sesiones activas, consultar el microservicio y auto-registrar
+    if (sessions.length === 0) {
+      try {
+        const microSessions: any[] = await firstValueFrom(
+          this.whatsappSenderClient
+            .send({ cmd: 'whatsapp_sender_sessions' }, {})
+            .pipe(
+              timeout(5000),
+              catchError((err) => { throw new Error(err?.message ?? 'unavailable'); }),
+            ),
+        );
+
+        this.logger.log(`[SESSIONS] Microservice sessions: ${JSON.stringify(microSessions)}`);
+
+        const readySessions = (microSessions ?? []).filter((ms) => ms.isReady);
+
+        if (readySessions.length > 0) {
+          for (const ms of readySessions) {
+            await this.whatsappService.createSession(userId, ms.sessionId, ms.sessionId);
+            await this.whatsappService.updateSessionStatus(ms.sessionId, true);
+          }
+          // Re-leer desde DB después de registrar
+          sessions = await this.whatsappService.getUserSessions(userId);
+          this.logger.log(`[SESSIONS] After auto-register, DB sessions: ${JSON.stringify(sessions.map(s => s.sessionId))}`);
+        }
+      } catch (e) {
+        this.logger.warn(`[SESSIONS] Could not query microservice: ${e.message}`);
+      }
+    }
+
+    // Sincronizar isReady para sesiones activas que aún no están listas
+    const syncedSessions = await Promise.all(
+      sessions.map(async (session) => {
+        if (!session.isActive || session.isReady) return session;
+
+        try {
+          const status = await firstValueFrom(
+            this.whatsappSenderClient
+              .send({ cmd: 'whatsapp_sender_session_status' }, { sessionId: session.sessionId })
+              .pipe(
+                timeout(5000),
+                catchError(() => { throw new Error('unavailable'); }),
+              ),
+          );
+
+          if (status?.isReady) {
+            await this.whatsappService.updateSessionStatus(session.sessionId, true);
+            return { ...session, isReady: true };
+          }
+        } catch {
+          // silencioso
+        }
+
+        return session;
+      }),
+    );
+
+    return syncedSessions;
   }
 
   @Post('session')
@@ -98,13 +158,6 @@ export class WhatsappSenderController {
 
   @Get('status/:sessionId')
   async getSessionStatus(@Param('sessionId') sessionId: string, @Request() req) {
-    const userId = req.user.id;
-
-    // Verificar que la sesión pertenece al usuario
-    await this.whatsappService.getSession(userId, sessionId);
-
-    this.logger.log(`User ${userId} checking status for session: ${sessionId}`);
-
     try {
       const result = await firstValueFrom(
         this.whatsappSenderClient
@@ -112,23 +165,30 @@ export class WhatsappSenderController {
           .pipe(
             retry(3),
             catchError((error) => {
-              this.logger.error(`Failed to fetch session status: ${error.message}`);
+              this.logger.error(`[STATUS] Failed to fetch session status: ${error.message}`);
               throw error;
             }),
           ),
       );
 
-      // Actualizar QR en base de datos si cambió
-      if (result?.qrBase64) {
+      if (!result) return null;
+
+      this.logger.log(`[STATUS] ${sessionId}: isReady=${result.isReady}, hasQr=${!!result.qrBase64}`);
+
+      // Actualizar DB si la sesión existe (puede no estar aún en auto-registro)
+      try {
         await this.whatsappService.updateSessionQr(
           sessionId,
-          result.qrBase64,
+          result.qrBase64 || null,
           result.isReady || false,
         );
+      } catch {
+        // sesión no en DB aún, ignorar
       }
 
       return result;
     } catch (error) {
+      this.logger.error(`[STATUS] Error for ${sessionId}: ${error.message}`);
       throw error;
     }
   }
@@ -168,5 +228,50 @@ export class WhatsappSenderController {
   async getStats(@Request() req) {
     const userId = req.user.id;
     return this.whatsappService.getSessionStats(userId);
+  }
+
+  @Post('send')
+  async sendMessage(@Body() dto: SendMessageDto, @Request() req) {
+    const userId = req.user.id;
+    const { sessionId, phone, message } = dto;
+
+    this.logger.log(`User ${userId} sending message via session: ${sessionId}`);
+
+    // Verificar que la sesión está lista antes de enviar
+    let status: any;
+    try {
+      status = await firstValueFrom(
+        this.whatsappSenderClient
+          .send({ cmd: 'whatsapp_sender_session_status' }, { sessionId })
+          .pipe(
+            retry(3),
+            catchError((error) => {
+              this.logger.error(`Failed to fetch session status: ${error.message}`);
+              throw error;
+            }),
+          ),
+      );
+    } catch {
+      throw new ServiceUnavailableException('No se pudo verificar el estado de la sesión');
+    }
+
+    if (!status?.isReady) {
+      throw new BadRequestException('La sesión no está lista para enviar mensajes');
+    }
+
+    // Enviar mensaje al microservicio
+    await firstValueFrom(
+      this.whatsappSenderClient
+        .send({ cmd: 'whatsapp_sender_send_message' }, { sessionId, phone, message })
+        .pipe(
+          catchError((error) => {
+            this.logger.error(`Failed to send message: ${error.message}`);
+            throw error;
+          }),
+        ),
+    );
+
+    // Registrar actividad
+    return this.whatsappService.sendMessage(userId, sessionId, phone, message);
   }
 }

@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { WhatsappSessionRepository } from '../repositories/whatsapp-session.repository';
+import { WhatsappSessionEntity } from '../domain/whatsapp-session.entity';
 import { ActivityRepository } from '../../users/repositories/activity.repository';
 import { ActivityType } from '../../users/domain/activity.entity';
 
@@ -22,6 +23,11 @@ export class WhatsappService {
       // Verificar ownership
       if (existing.userId !== userId) {
         throw new ForbiddenException('Esta sesión pertenece a otro usuario');
+      }
+      // Reactivar si estaba inactiva
+      if (!existing.isActive) {
+        this.logger.log(`Reactivating existing session ${sessionId}`);
+        return this.sessionRepository.update(existing.id, { isActive: true, isReady: false });
       }
       return existing;
     }
@@ -48,7 +54,7 @@ export class WhatsappService {
   }
 
   async getUserSessions(userId: string) {
-    const sessions = await this.sessionRepository.findByUserId(userId);
+    const sessions = await this.sessionRepository.findActiveByUserId(userId);
     return sessions.map((session) => session.toJSON());
   }
 
@@ -70,18 +76,19 @@ export class WhatsappService {
     return session;
   }
 
-  async updateSessionQr(sessionId: string, qrCode: string, isReady: boolean) {
+  async updateSessionQr(sessionId: string, qrCode: string | null, isReady: boolean) {
     const session = await this.sessionRepository.findBySessionId(sessionId);
 
     if (!session) {
       throw new NotFoundException('Sesión no encontrada');
     }
 
-    // Actualizar sesión
-    const updated = await this.sessionRepository.updateBySessionId(sessionId, {
-      lastQrCode: qrCode,
-      isReady,
-    });
+    const updateData: Partial<WhatsappSessionEntity> = { isReady };
+    if (qrCode !== null) {
+      updateData.lastQrCode = qrCode;
+    }
+
+    const updated = await this.sessionRepository.updateBySessionId(sessionId, updateData);
 
     // Registrar actividad si es un nuevo QR
     if (qrCode && qrCode !== session.lastQrCode) {
@@ -128,5 +135,30 @@ export class WhatsappService {
       active,
       inactive: total - active,
     };
+  }
+
+  async updateSessionStatus(sessionId: string, isReady: boolean) {
+    const session = await this.sessionRepository.findBySessionId(sessionId);
+    if (!session) return;
+
+    await this.sessionRepository.updateBySessionId(sessionId, { isReady });
+    this.logger.log(`Session ${sessionId} isReady synced to ${isReady}`);
+  }
+
+  async sendMessage(userId: string, sessionId: string, phone: string, message: string) {
+    // Verificar ownership
+    const session = await this.getSession(userId, sessionId);
+
+    // Registrar actividad (sin guardar contenido del mensaje)
+    await this.activityRepository.create({
+      userId,
+      sessionId: session.id,
+      type: ActivityType.MESSAGE_SENT,
+      description: `Mensaje enviado a ${phone} desde sesión ${sessionId}`,
+    });
+
+    this.logger.log(`Message sent from session ${sessionId} to ${phone}`);
+
+    return { success: true };
   }
 }
