@@ -5,6 +5,8 @@ import { envs } from '../../config/envs';
 import { WhatsappService } from './services/whatsapp.service';
 import { WhatsappSessionRepository } from './repositories/whatsapp-session.repository';
 import { ActivityRepository } from '../users/repositories/activity.repository';
+import { MessageLogRepository } from './repositories/message-log.repository';
+import { FailedMessageLogRepository } from './repositories/failed-message-log.repository';
 
 @Module({
   imports: [
@@ -19,7 +21,7 @@ import { ActivityRepository } from '../users/repositories/activity.repository';
       },
     ]),
   ],
-  providers: [WhatsappService, WhatsappSessionRepository, ActivityRepository],
+  providers: [WhatsappService, WhatsappSessionRepository, ActivityRepository, MessageLogRepository, FailedMessageLogRepository],
   exports: [WhatsappService, WhatsappSessionRepository],
 })
 export class WhatsappModule {}

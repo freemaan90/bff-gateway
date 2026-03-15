@@ -18,6 +18,8 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   get user() { return this.client.user; }
   get whatsappSession() { return this.client.whatsappSession; }
   get activity() { return this.client.activity; }
+  get messageLog() { return this.client.messageLog; }
+  get failedMessageLog() { return this.client.failedMessageLog; }
 
   async onModuleInit() {
     await this.client.$connect();

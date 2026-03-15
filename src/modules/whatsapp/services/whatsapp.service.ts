@@ -3,6 +3,9 @@ import { WhatsappSessionRepository } from '../repositories/whatsapp-session.repo
 import { WhatsappSessionEntity } from '../domain/whatsapp-session.entity';
 import { ActivityRepository } from '../../users/repositories/activity.repository';
 import { ActivityType } from '../../users/domain/activity.entity';
+import { MessageLogRepository } from '../repositories/message-log.repository';
+import { FailedMessageLogRepository } from '../repositories/failed-message-log.repository';
+import { MessageLogResponseDto, FailedMessageLogResponseDto } from '../../../whatsapp-sender/dto/message-log-response.dto';
 
 // Service Layer - Lógica de negocio para WhatsApp
 @Injectable()
@@ -12,6 +15,8 @@ export class WhatsappService {
   constructor(
     private readonly sessionRepository: WhatsappSessionRepository,
     private readonly activityRepository: ActivityRepository,
+    private readonly messageLogRepository: MessageLogRepository,
+    private readonly failedMessageLogRepository: FailedMessageLogRepository,
   ) {}
 
   async createSession(userId: string, sessionId: string, phoneNumber: string) {
@@ -145,20 +150,91 @@ export class WhatsappService {
     this.logger.log(`Session ${sessionId} isReady synced to ${isReady}`);
   }
 
+  async getMessages(userId: string, limit: number): Promise<MessageLogResponseDto[]> {
+    const logs = await this.messageLogRepository.findByUserId({ userId, limit });
+    return logs.map((log) => ({
+      id: log.id,
+      phone: log.phone,
+      messageText: log.messageText,
+      sessionId: log.sessionId,
+      sentAt: log.sentAt.toISOString(),
+    }));
+  }
+
+  async getFailedMessages(userId: string, limit: number): Promise<FailedMessageLogResponseDto[]> {
+    const logs = await this.failedMessageLogRepository.findByUserId({ userId, limit });
+    return logs.map((log) => ({
+      id: log.id,
+      phone: log.phone,
+      messageText: log.messageText,
+      sessionId: log.sessionId,
+      failureReason: log.failureReason,
+      failedAt: log.failedAt.toISOString(),
+    }));
+  }
+
   async sendMessage(userId: string, sessionId: string, phone: string, message: string) {
     // Verificar ownership
     const session = await this.getSession(userId, sessionId);
 
-    // Registrar actividad (sin guardar contenido del mensaje)
-    await this.activityRepository.create({
-      userId,
-      sessionId: session.id,
-      type: ActivityType.MESSAGE_SENT,
-      description: `Mensaje enviado a ${phone} desde sesión ${sessionId}`,
-    });
+    try {
+      // Registrar actividad (sin guardar contenido del mensaje)
+      await this.activityRepository.create({
+        userId,
+        sessionId: session.id,
+        type: ActivityType.MESSAGE_SENT,
+        description: `Mensaje enviado a ${phone} desde sesión ${sessionId}`,
+      });
 
-    this.logger.log(`Message sent from session ${sessionId} to ${phone}`);
+      this.logger.log(`Message sent from session ${sessionId} to ${phone}`);
 
-    return { success: true };
+      // Persistir log de mensaje exitoso (fire-and-forget)
+      try {
+        await this.messageLogRepository.create({
+          userId,
+          sessionId: session.id,
+          phone,
+          messageText: message,
+        });
+      } catch (logError) {
+        this.logger.error(`Failed to persist MessageLog: ${logError}`);
+      }
+
+      return { success: true };
+    } catch (error) {
+      // Persistir log de mensaje fallido (fire-and-forget)
+      try {
+        await this.failedMessageLogRepository.create({
+          userId,
+          sessionId: session.id,
+          phone,
+          messageText: message,
+          failureReason: truncateFailureReason(error),
+        });
+      } catch (logError) {
+        this.logger.error(`Failed to persist FailedMessageLog: ${logError}`);
+      }
+
+      throw error;
+    }
   }
+}
+
+export function truncateFailureReason(error: unknown): string {
+  const msg: string =
+    error instanceof Error
+      ? error.message
+      : String((error as any)?.message ?? error);
+
+  if (msg.includes('La sesión no está lista')) {
+    return 'La sesión no está lista';
+  }
+  if (
+    msg.includes('ECONNREFUSED') ||
+    msg.includes('timeout') ||
+    msg.includes('ServiceUnavailable')
+  ) {
+    return 'Microservicio no disponible';
+  }
+  return msg.substring(0, 500);
 }

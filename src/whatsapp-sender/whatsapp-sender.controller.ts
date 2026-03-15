@@ -7,6 +7,7 @@ import {
   Logger,
   Param,
   Post,
+  Query,
   BadRequestException,
   ServiceUnavailableException,
   UseGuards,
@@ -17,6 +18,7 @@ import { catchError, firstValueFrom, retry, timeout } from 'rxjs';
 import { WHATSAPP_SENDER } from 'src/service/service';
 import { CreateSessionDto } from './dto/create-session.dto';
 import { SendMessageDto } from './dto/send-message.dto';
+import { MessageLogResponseDto, FailedMessageLogResponseDto } from './dto/message-log-response.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { WhatsappService } from '../modules/whatsapp/services/whatsapp.service';
 
@@ -228,6 +230,28 @@ export class WhatsappSenderController {
   async getStats(@Request() req) {
     const userId = req.user.id;
     return this.whatsappService.getSessionStats(userId);
+  }
+
+  @Get('messages/failed')
+  async getFailedMessages(
+    @Request() req,
+    @Query('limit') limitStr?: string,
+  ): Promise<FailedMessageLogResponseDto[]> {
+    const userId = req.user.id;
+    const parsed = parseInt(limitStr ?? '', 10);
+    const limit = !isNaN(parsed) && parsed >= 1 && parsed <= 100 ? parsed : 50;
+    return this.whatsappService.getFailedMessages(userId, limit);
+  }
+
+  @Get('messages')
+  async getMessages(
+    @Request() req,
+    @Query('limit') limitStr?: string,
+  ): Promise<MessageLogResponseDto[]> {
+    const userId = req.user.id;
+    const parsed = parseInt(limitStr ?? '', 10);
+    const limit = !isNaN(parsed) && parsed >= 1 && parsed <= 100 ? parsed : 50;
+    return this.whatsappService.getMessages(userId, limit);
   }
 
   @Post('send')
