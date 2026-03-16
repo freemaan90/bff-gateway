@@ -9,10 +9,12 @@ import { WhatsappSenderModule } from './whatsapp-sender/whatsapp-sender.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
+import { TemplatesModule } from './templates/templates.module';
 
 @Module({
   imports: [
     PrismaModule,
+    TemplatesModule,
     AuthModule,
     UsersModule,
     ClientsModule.register([
