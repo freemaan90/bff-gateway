@@ -6,6 +6,11 @@ datasource db {
   provider = "postgresql"
 }
 
+enum ChannelType {
+  OFFICIAL
+  UNOFFICIAL
+}
+
 model User {
   id                String             @id @default(uuid())
   email             String             @unique
@@ -21,10 +26,14 @@ model User {
 
 model WhatsappSession {
   id                String             @id @default(uuid())
-  sessionId         String             @unique
+  sessionId         String?            @unique
   userId            String
   user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   phoneNumber       String
+  channelType       ChannelType        @default(UNOFFICIAL)
+  phoneNumberId     String?
+  accessToken       String?
+  wabaId            String?
   isActive          Boolean            @default(true)
   isReady           Boolean            @default(false)
   lastQrCode        String?
@@ -61,9 +70,12 @@ model MessageLog {
   session     WhatsappSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
   phone       String
   messageText String
+  channelType ChannelType      @default(UNOFFICIAL)
+  wamid       String?
   sentAt      DateTime         @default(now())
 
   @@index([userId, sentAt])
+  @@index([wamid])
 }
 
 model FailedMessageLog {
@@ -75,6 +87,7 @@ model FailedMessageLog {
   phone         String
   messageText   String
   failureReason String
+  channelType   ChannelType      @default(UNOFFICIAL)
   failedAt      DateTime         @default(now())
 
   @@index([userId, failedAt])

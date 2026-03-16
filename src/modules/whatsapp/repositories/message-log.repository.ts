@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { MessageLog } from '@prisma/client';
 
@@ -7,6 +7,8 @@ interface CreateMessageLogDto {
   sessionId: string | null;
   phone: string;
   messageText: string;
+  channelType?: string;
+  wamid?: string;
 }
 
 interface FindMessageLogsDto {
@@ -16,6 +18,8 @@ interface FindMessageLogsDto {
 
 @Injectable()
 export class MessageLogRepository {
+  private readonly logger = new Logger(MessageLogRepository.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   async create(data: CreateMessageLogDto): Promise<MessageLog> {
@@ -28,5 +32,18 @@ export class MessageLogRepository {
       orderBy: { sentAt: 'desc' },
       take: dto.limit,
     });
+  }
+
+  async findByWamid(wamid: string): Promise<MessageLog | null> {
+    return this.prisma.messageLog.findFirst({
+      where: { wamid } as any,
+    });
+  }
+
+  async updateDeliveryStatus(wamid: string, status: string): Promise<void> {
+    // No deliveryStatus field in schema yet — log warning for future use
+    this.logger.warn(
+      `updateDeliveryStatus called for wamid=${wamid} status=${status} — no deliveryStatus field in schema yet`,
+    );
   }
 }

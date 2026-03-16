@@ -17,7 +17,9 @@ import { ClientProxy } from '@nestjs/microservices';
 import { catchError, firstValueFrom, retry, timeout } from 'rxjs';
 import { WHATSAPP_SENDER } from 'src/service/service';
 import { CreateSessionDto } from './dto/create-session.dto';
+import { CreateOfficialSessionDto } from './dto/create-official-session.dto';
 import { SendMessageDto } from './dto/send-message.dto';
+import { BulkSendDto } from './dto/bulk-send.dto';
 import { MessageLogResponseDto, FailedMessageLogResponseDto } from './dto/message-log-response.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { WhatsappService } from '../modules/whatsapp/services/whatsapp.service';
@@ -61,14 +63,27 @@ export class WhatsappSenderController {
     }
   }
 
+  @Post('sessions/official')
+  async createOfficialSession(@Body() dto: CreateOfficialSessionDto, @Request() req) {
+    const userId = req.user.id;
+    return this.whatsappService.createOfficialSession(userId, dto);
+  }
+
   @Get('sessions')
   async getSessions(@Request() req) {
     const userId = req.user.id;
 
-    let sessions = await this.whatsappService.getUserSessions(userId);
+    const allSessions = await this.whatsappService.getUserSessions(userId);
 
-    // Si la DB no tiene sesiones activas, consultar el microservicio y auto-registrar
-    if (sessions.length === 0) {
+    // Separate official and unofficial sessions
+    const officialSessions = allSessions.filter((s) => s.channelType === 'OFFICIAL');
+    const unofficialSessions = allSessions.filter((s) => s.channelType !== 'OFFICIAL');
+
+    // For unofficial sessions: apply existing sync logic with microservice
+    let syncedUnofficial = unofficialSessions;
+
+    // If no unofficial sessions in DB, try to auto-register from microservice
+    if (unofficialSessions.length === 0) {
       try {
         const microSessions: any[] = await firstValueFrom(
           this.whatsappSenderClient
@@ -88,18 +103,19 @@ export class WhatsappSenderController {
             await this.whatsappService.createSession(userId, ms.sessionId, ms.sessionId);
             await this.whatsappService.updateSessionStatus(ms.sessionId, true);
           }
-          // Re-leer desde DB después de registrar
-          sessions = await this.whatsappService.getUserSessions(userId);
-          this.logger.log(`[SESSIONS] After auto-register, DB sessions: ${JSON.stringify(sessions.map(s => s.sessionId))}`);
+          // Re-read from DB after registering
+          const refreshed = await this.whatsappService.getUserSessions(userId);
+          syncedUnofficial = refreshed.filter((s) => s.channelType !== 'OFFICIAL');
+          this.logger.log(`[SESSIONS] After auto-register, unofficial sessions: ${JSON.stringify(syncedUnofficial.map(s => s.sessionId))}`);
         }
       } catch (e) {
         this.logger.warn(`[SESSIONS] Could not query microservice: ${e.message}`);
       }
     }
 
-    // Sincronizar isReady para sesiones activas que aún no están listas
-    const syncedSessions = await Promise.all(
-      sessions.map(async (session) => {
+    // Sync isReady for unofficial sessions not yet ready
+    syncedUnofficial = await Promise.all(
+      syncedUnofficial.map(async (session) => {
         if (!session.isActive || session.isReady) return session;
 
         try {
@@ -113,7 +129,7 @@ export class WhatsappSenderController {
           );
 
           if (status?.isReady) {
-            await this.whatsappService.updateSessionStatus(session.sessionId, true);
+            await this.whatsappService.updateSessionStatus(session.sessionId!, true);
             return { ...session, isReady: true };
           }
         } catch {
@@ -124,7 +140,8 @@ export class WhatsappSenderController {
       }),
     );
 
-    return syncedSessions;
+    // Official sessions are always isReady=true, no microservice sync needed
+    return [...officialSessions, ...syncedUnofficial];
   }
 
   @Post('session')
@@ -201,8 +218,18 @@ export class WhatsappSenderController {
 
     this.logger.log(`User ${userId} deleting session: ${sessionId}`);
 
+    // Determine channelType: try to find by DB id first (official), then by sessionId (unofficial)
+    const sessionById = await this.whatsappService.findSessionById(sessionId);
+
+    if (sessionById && sessionById.channelType === 'OFFICIAL') {
+      // Official session: only delete from DB, no microservice call
+      await this.whatsappService.deleteOfficialSession(userId, sessionId);
+      this.logger.log(`Official session deleted for user ${userId}`);
+      return { success: true };
+    }
+
+    // Unofficial session: call microservice + DB
     try {
-      // Llamar al microservicio
       const result = await firstValueFrom(
         this.whatsappSenderClient
           .send({ cmd: 'whatsapp_sender_delete_session' }, { sessionId })
@@ -215,7 +242,6 @@ export class WhatsappSenderController {
           ),
       );
 
-      // Actualizar en base de datos
       await this.whatsappService.deleteSession(userId, sessionId);
 
       this.logger.log(`Session deleted successfully for user ${userId}`);
@@ -257,11 +283,24 @@ export class WhatsappSenderController {
   @Post('send')
   async sendMessage(@Body() dto: SendMessageDto, @Request() req) {
     const userId = req.user.id;
-    const { sessionId, phone, message } = dto;
+    const { sessionId, phone, message, templateName, languageCode, templateComponents } = dto;
 
     this.logger.log(`User ${userId} sending message via session: ${sessionId}`);
 
-    // Verificar que la sesión está lista antes de enviar
+    // Determine channelType: try to find by DB id first (official), then treat as unofficial
+    const sessionById = await this.whatsappService.findSessionById(sessionId);
+    const isOfficial = sessionById?.channelType === 'OFFICIAL';
+
+    if (isOfficial) {
+      // Official channel: call service directly, no TCP check
+      return this.whatsappService.sendMessage(userId, sessionId, phone, message ?? '', {
+        templateName,
+        languageCode,
+        templateComponents,
+      });
+    }
+
+    // Unofficial channel: verify TCP status, send via microservice, then log
     let status: any;
     try {
       status = await firstValueFrom(
@@ -295,7 +334,37 @@ export class WhatsappSenderController {
         ),
     );
 
-    // Registrar actividad
-    return this.whatsappService.sendMessage(userId, sessionId, phone, message);
+    // Registrar actividad y log
+    return this.whatsappService.sendMessage(userId, sessionId, phone, message ?? '');
+  }
+
+  @Post('bulk-send')
+  async bulkSend(@Body() dto: BulkSendDto, @Request() req) {
+    const userId = req.user.id;
+    const { sessionId, phones, message, templateName, languageCode, templateComponents } = dto;
+
+    // Determine channelType
+    const session = await this.whatsappService.findSessionById(sessionId);
+    const isOfficial = session?.channelType === 'OFFICIAL';
+
+    if (isOfficial) {
+      return this.whatsappService.bulkSend(userId, sessionId, phones, message ?? '', {
+        templateName,
+        languageCode,
+        templateComponents,
+      });
+    }
+
+    // Unofficial: delegate to microservice (existing behavior)
+    return firstValueFrom(
+      this.whatsappSenderClient
+        .send({ cmd: 'whatsapp_sender_bulk_send' }, { sessionId, phones, message })
+        .pipe(
+          catchError((error) => {
+            this.logger.error(`Failed bulk send: ${error.message}`);
+            throw error;
+          }),
+        ),
+    );
   }
 }

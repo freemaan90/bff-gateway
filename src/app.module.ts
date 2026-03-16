@@ -10,10 +10,12 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { TemplatesModule } from './templates/templates.module';
+import { WebhooksModule } from './webhooks/webhooks.module';
 
 @Module({
   imports: [
     PrismaModule,
+    WebhooksModule,
     TemplatesModule,
     AuthModule,
     UsersModule,

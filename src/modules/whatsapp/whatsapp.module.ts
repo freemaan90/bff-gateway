@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { HttpModule } from '@nestjs/axios';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { WHATSAPP_SENDER } from '../../service/service';
 import { envs } from '../../config/envs';
@@ -7,9 +8,12 @@ import { WhatsappSessionRepository } from './repositories/whatsapp-session.repos
 import { ActivityRepository } from '../users/repositories/activity.repository';
 import { MessageLogRepository } from './repositories/message-log.repository';
 import { FailedMessageLogRepository } from './repositories/failed-message-log.repository';
+import { EncryptionModule } from '../../common/encryption/encryption.module';
 
 @Module({
   imports: [
+    HttpModule,
+    EncryptionModule,
     ClientsModule.register([
       {
         name: WHATSAPP_SENDER,
@@ -21,7 +25,13 @@ import { FailedMessageLogRepository } from './repositories/failed-message-log.re
       },
     ]),
   ],
-  providers: [WhatsappService, WhatsappSessionRepository, ActivityRepository, MessageLogRepository, FailedMessageLogRepository],
+  providers: [
+    WhatsappService,
+    WhatsappSessionRepository,
+    ActivityRepository,
+    MessageLogRepository,
+    FailedMessageLogRepository,
+  ],
   exports: [WhatsappService, WhatsappSessionRepository],
 })
 export class WhatsappModule {}

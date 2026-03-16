@@ -8,6 +8,7 @@ interface CreateFailedMessageLogDto {
   phone: string;
   messageText: string;
   failureReason: string;
+  channelType?: string;
 }
 
 interface FindFailedMessageLogsDto {

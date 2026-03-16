@@ -1,9 +1,13 @@
 // Domain Entity para WhatsApp Session
 export class WhatsappSessionEntity {
   id: string;
-  sessionId: string;
+  sessionId: string | null;
   userId: string;
   phoneNumber: string;
+  channelType: string; // 'OFFICIAL' | 'UNOFFICIAL'
+  phoneNumberId?: string;
+  accessToken?: string; // cifrado en DB, descifrado en memoria
+  wabaId?: string;
   isActive: boolean;
   isReady: boolean;
   lastQrCode?: string;
@@ -20,7 +24,7 @@ export class WhatsappSessionEntity {
   }
 
   needsQrCode(): boolean {
-    return this.isActive && !this.isReady;
+    return this.isActive && !this.isReady && this.channelType !== 'OFFICIAL';
   }
 
   getStatus(): SessionStatus {
@@ -46,6 +50,10 @@ export class WhatsappSessionEntity {
       sessionId: this.sessionId,
       userId: this.userId,
       phoneNumber: this.phoneNumber,
+      channelType: this.channelType,
+      phoneNumberId: this.phoneNumberId,
+      wabaId: this.wabaId,
+      // accessToken is intentionally excluded
       isActive: this.isActive,
       isReady: this.isReady,
       lastQrCode: this.lastQrCode,

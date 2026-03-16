@@ -1,4 +1,5 @@
 import {
+  ArrayMaxSize,
   IsArray,
   IsNotEmpty,
   IsOptional,
@@ -6,14 +7,14 @@ import {
   ValidateIf,
 } from 'class-validator';
 
-export class SendMessageDto {
+export class BulkSendDto {
   @IsString()
   @IsNotEmpty()
   sessionId: string;
 
-  @IsString()
-  @IsNotEmpty()
-  phone: string;
+  @IsArray()
+  @ArrayMaxSize(1000, { message: 'Cannot send to more than 1000 phone numbers at once' })
+  phones: string[];
 
   @IsString()
   @IsOptional()
