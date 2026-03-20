@@ -11,6 +11,7 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { TemplatesModule } from './templates/templates.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
+import { WhatsappOnboardingModule } from './modules/whatsapp-onboarding/whatsapp-onboarding.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     TemplatesModule,
     AuthModule,
     UsersModule,
+    WhatsappOnboardingModule,
     ClientsModule.register([
       {
         name: WHATSAPP_SENDER,

@@ -9,6 +9,9 @@ interface EnvVars {
     DATABASE_URL: string
     JWT_SECRET: string
     JWT_EXPIRES_IN: ms.StringValue
+    META_APP_ID: string
+    META_APP_SECRET: string
+    META_REDIRECT_URI: string
 }
 
 const envSchema = joi.object({
@@ -17,7 +20,10 @@ const envSchema = joi.object({
     BFF_WHATSAPP_SENDER_PORT: joi.number().required(),
     DATABASE_URL: joi.string().required(),
     JWT_SECRET: joi.string().required(),
-    JWT_EXPIRES_IN: joi.string().default('7d')
+    JWT_EXPIRES_IN: joi.string().default('7d'),
+    META_APP_ID: joi.string().required(),
+    META_APP_SECRET: joi.string().required(),
+    META_REDIRECT_URI: joi.string().required(),
 }).unknown(true)
 
 const { error, value } = envSchema.validate(process.env)
@@ -35,11 +41,17 @@ export const envs: {
     DATABASE_URL: string
     JWT_SECRET: string
     JWT_EXPIRES_IN: ms.StringValue
+    metaAppId: string
+    metaAppSecret: string
+    metaRedirectUri: string
 } = {
     port: envVars.PORT,
     BFF_WHATSAPP_SENDER_HOST: envVars.BFF_WHATSAPP_SENDER_HOST,
     BFF_WHATSAPP_SENDER_PORT: envVars.BFF_WHATSAPP_SENDER_PORT,
     DATABASE_URL: envVars.DATABASE_URL,
     JWT_SECRET: envVars.JWT_SECRET,
-    JWT_EXPIRES_IN: envVars.JWT_EXPIRES_IN
+    JWT_EXPIRES_IN: envVars.JWT_EXPIRES_IN,
+    metaAppId: envVars.META_APP_ID,
+    metaAppSecret: envVars.META_APP_SECRET,
+    metaRedirectUri: envVars.META_REDIRECT_URI,
 }

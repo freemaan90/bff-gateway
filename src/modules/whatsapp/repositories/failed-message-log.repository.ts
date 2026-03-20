@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import { ChannelType, FailedMessageLog } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { FailedMessageLog } from '@prisma/client';
 
 interface CreateFailedMessageLogDto {
   userId: string;
@@ -8,7 +8,7 @@ interface CreateFailedMessageLogDto {
   phone: string;
   messageText: string;
   failureReason: string;
-  channelType?: string;
+  channelType?: ChannelType;
 }
 
 interface FindFailedMessageLogsDto {

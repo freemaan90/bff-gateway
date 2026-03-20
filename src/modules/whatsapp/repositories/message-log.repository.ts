@@ -1,13 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ChannelType, MessageLog } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { MessageLog } from '@prisma/client';
 
 interface CreateMessageLogDto {
   userId: string;
   sessionId: string | null;
   phone: string;
   messageText: string;
-  channelType?: string;
+  channelType?: ChannelType;
   wamid?: string;
 }
 
